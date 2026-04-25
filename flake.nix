@@ -88,6 +88,93 @@
           '';
         in
         {
+          packages.xdg-desktop-portal-kiorg = pkgs.rustPlatform.buildRustPackage {
+            pname = "xdg-desktop-portal-kiorg";
+            version = "0.1.0";
+            src = ./.;
+            cargoHash = "sha256-Cw100J7G7x2AsLobKjHk4tO9CHjcxOkApIYILZLMTL0=";
+
+            cargoBuildFlags = [
+              "-p"
+              "kiorg-portal"
+            ];
+            doCheck = false;
+
+            nativeBuildInputs = with pkgs; [
+              rustToolchain
+              pkg-config
+              makeWrapper
+            ];
+
+            buildInputs = with pkgs; [
+              openssl
+              stdenv.cc.cc.lib
+            ];
+
+            postInstall =
+              let
+                portalFile = pkgs.writeText "kiorg.portal" ''
+                  [portal]
+                  DBusName=org.freedesktop.impl.portal.desktop.kiorg
+                  Interfaces=org.freedesktop.impl.portal.FileChooser
+                  UseIn=kiorg
+                '';
+                dbusService = pkgs.writeTextFile {
+                  name = "org.freedesktop.impl.portal.desktop.kiorg.service";
+                  text = ''
+                    [D-BUS Service]
+                    Name=org.freedesktop.impl.portal.desktop.kiorg
+                    Exec=@out@/libexec/xdg-desktop-portal-kiorg
+                  '';
+                };
+                systemdUnit = pkgs.writeText "xdg-desktop-portal-kiorg.service" ''
+                  [Unit]
+                  Description=Kiorg portal backend (xdg-desktop-portal)
+                  PartOf=graphical-session.target
+
+                  [Service]
+                  Type=dbus
+                  BusName=org.freedesktop.impl.portal.desktop.kiorg
+                  ExecStart=@out@/libexec/xdg-desktop-portal-kiorg
+                  Restart=on-failure
+
+                  [Install]
+                  WantedBy=graphical-session.target
+                '';
+              in
+              ''
+                # xdg-desktop-portal expects the binary in libexec
+                mkdir -p $out/libexec
+                mv $out/bin/xdg-desktop-portal-kiorg $out/libexec/xdg-desktop-portal-kiorg
+                rmdir $out/bin || true
+
+                wrapProgram $out/libexec/xdg-desktop-portal-kiorg \
+                  --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath (with pkgs; [ stdenv.cc.cc.lib ])}
+
+                install -Dm644 ${portalFile} \
+                  $out/share/xdg-desktop-portal/portals/kiorg.portal
+
+                install -Dm644 ${dbusService} \
+                  $out/share/dbus-1/services/org.freedesktop.impl.portal.desktop.kiorg.service
+                substituteInPlace \
+                  $out/share/dbus-1/services/org.freedesktop.impl.portal.desktop.kiorg.service \
+                  --replace-fail @out@ $out
+
+                install -Dm644 ${systemdUnit} \
+                  $out/lib/systemd/user/xdg-desktop-portal-kiorg.service
+                substituteInPlace \
+                  $out/lib/systemd/user/xdg-desktop-portal-kiorg.service \
+                  --replace-fail @out@ $out
+              '';
+
+            meta = {
+              description = "xdg-desktop-portal backend for the kiorg file manager";
+              homepage = "https://github.com/houqp/kiorg";
+              license = pkgs.lib.licenses.mit;
+              mainProgram = "xdg-desktop-portal-kiorg";
+            };
+          };
+
           packages.default = pkgs.rustPlatform.buildRustPackage {
             pname = "kiorg";
             version = "1.5.2";
@@ -97,8 +184,6 @@
             cargoBuildFlags = [
               "-p"
               "kiorg"
-              "-p"
-              "kiorg-portal"
             ];
             cargoTestFlags = [
               "-p"
@@ -120,7 +205,6 @@
             ];
 
             postInstall = ''
-              install -Dm755 target/${pkgs.stdenv.hostPlatform.rust.rustcTargetSpec}/release/xdg-desktop-portal-kiorg $out/bin/xdg-desktop-portal-kiorg
               wrapProgram $out/bin/kiorg \
                 --prefix LD_LIBRARY_PATH : ${
                   pkgs.lib.makeLibraryPath (
@@ -135,8 +219,6 @@
                     ]
                   )
                 }
-              wrapProgram $out/bin/xdg-desktop-portal-kiorg \
-                --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath (with pkgs; [ stdenv.cc.cc.lib ])}
             '';
 
             meta = {
@@ -172,7 +254,15 @@
         };
     in
     {
-      packages = forAllSystems (system: (mkPerSystem system).packages);
+      packages = forAllSystems (
+        system:
+        let
+          perSystem = mkPerSystem system;
+        in
+        {
+          inherit (perSystem.packages) default xdg-desktop-portal-kiorg;
+        }
+      );
       devShells = forAllSystems (system: (mkPerSystem system).devShells);
     };
 }
