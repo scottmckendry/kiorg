@@ -46,10 +46,11 @@ fn create_test_app(file_count: usize) -> (Kiorg, tempfile::TempDir, tempfile::Te
         &cc,
         Some(temp_dir.path().to_path_buf()),
         Some(test_config_dir),
+        None,
     )
     .expect("Failed to create Kiorg app");
 
-    (app, temp_dir, config_temp_dir)
+  (app, temp_dir, config_temp_dir)
 }
 
 /// Create app with deep directory structure to test path navigation performance
@@ -79,6 +80,7 @@ fn create_app_with_deep_path(depth: usize) -> (Kiorg, tempfile::TempDir, tempfil
         &cc,
         Some(temp_dir.path().to_path_buf()),
         Some(test_config_dir),
+        None,
     )
     .expect("Failed to create Kiorg app");
 

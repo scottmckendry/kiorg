@@ -76,6 +76,19 @@ impl From<config::ConfigError> for KiorgError {
     }
 }
 
+/// Configuration for picker mode (when kiorg is invoked as a file chooser portal)
+#[derive(Debug, Clone)]
+pub struct PickerConfig {
+    /// File to write the newline-separated list of selected paths into on confirm
+    pub result_file: std::path::PathBuf,
+    /// Allow selecting multiple entries
+    pub multiple: bool,
+    /// Only allow selecting directories
+    pub directory_only: bool,
+    /// Save-file mode (user types a filename)
+    pub save_mode: bool,
+}
+
 /// Clipboard operation types
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Clipboard {
@@ -191,6 +204,10 @@ pub struct Kiorg {
     pub plugin_manager: crate::plugins::PluginManager,
     // Inline rename
     pub inline_rename: Option<Rename>,
+    // Picker mode config (Some when launched as a portal file chooser)
+    pub picker_config: Option<PickerConfig>,
+    // In save mode: the filename the user types
+    pub picker_save_filename: String,
 }
 
 impl Kiorg {
@@ -198,6 +215,7 @@ impl Kiorg {
         cc: &eframe::CreationContext<'_>,
         initial_dir: Option<PathBuf>,
         config_dir_override: Option<PathBuf>,
+        picker_config: Option<PickerConfig>,
     ) -> Result<Self, KiorgError> {
         let config = config::load_config_with_override(config_dir_override.as_deref())?;
 
@@ -340,6 +358,8 @@ impl Kiorg {
             dragged_file: None,
             plugin_manager,
             inline_rename: None,
+            picker_config,
+            picker_save_filename: String::new(),
         };
 
         app.refresh_entries();
@@ -364,6 +384,68 @@ impl Kiorg {
     /// Check and process notification messages from background operations
     pub fn check_notifications(&mut self) {
         notification::check_notifications(self);
+    }
+
+    /// Confirm picker selection: write paths to result file and signal shutdown.
+    /// In save mode, uses `picker_save_filename` as the filename in the current dir.
+    pub fn picker_confirm(&mut self) {
+        let Some(cfg) = &self.picker_config else {
+            return;
+        };
+        let result_file = cfg.result_file.clone();
+        let save_mode = cfg.save_mode;
+        let directory_only = cfg.directory_only;
+
+        let paths: Vec<PathBuf> = if save_mode {
+            // Save mode: result is current_dir / filename
+            let current_dir = self.tab_manager.current_tab_ref().current_path.clone();
+            let filename = self.picker_save_filename.trim().to_string();
+            if filename.is_empty() {
+                self.notify_error("Enter a filename before confirming.");
+                return;
+            }
+            vec![current_dir.join(&filename)]
+        } else {
+            // Pick mode: use marked entries, or fall back to the currently selected entry
+            let tab = self.tab_manager.current_tab_ref();
+            let marked: Vec<PathBuf> = tab
+                .marked_entries
+                .iter()
+                .filter(|p| !directory_only || p.is_dir())
+                .cloned()
+                .collect();
+            if !marked.is_empty() {
+                marked
+            } else if let Some(entry) = tab.selected_entry() {
+                let p = entry.meta.path.clone();
+                if directory_only && !p.is_dir() {
+                    self.notify_error("Select a directory.");
+                    return;
+                }
+                vec![p]
+            } else {
+                self.notify_error("No file selected.");
+                return;
+            }
+        };
+
+        let content = paths
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if let Err(e) = std::fs::write(&result_file, content) {
+            self.notify_error(format!("Failed to write picker result: {e}"));
+            return;
+        }
+
+        self.shutdown_requested = true;
+    }
+
+    /// Cancel picker: exit without writing anything.
+    pub fn picker_cancel(&mut self) {
+        self.shutdown_requested = true;
     }
 
     pub fn poll_preview_content(&mut self, ctx: &egui::Context) {
@@ -891,6 +973,13 @@ impl Kiorg {
             return;
         }
 
+        // In picker save mode, suppress keybinds while the filename field has focus
+        if self.picker_config.as_ref().map(|c| c.save_mode).unwrap_or(false)
+            && ctx.memory(|m| m.focused().is_some())
+        {
+            return;
+        }
+
         // Prioritize Search Mode Input
         if search_bar::handle_key_press(ctx, self) {
             return;
@@ -1204,6 +1293,97 @@ impl eframe::App for Kiorg {
                 action_history::draw(ctx, self);
             }
             None => {}
+        }
+
+        // Picker mode bottom bar — must be added before CentralPanel
+        if self.picker_config.is_some() {
+            let save_mode = self
+                .picker_config
+                .as_ref()
+                .map(|c| c.save_mode)
+                .unwrap_or(false);
+            let mut confirm = false;
+            let mut cancel = false;
+            let mut new_filename: Option<String> = None;
+
+            egui::TopBottomPanel::bottom("picker_bar")
+                .min_height(0.0)
+                .show(ctx, |ui| {
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::symmetric(6, 4))
+                    .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(0.0);
+                    if save_mode {
+                        ui.label("Filename:");
+                        let mut fname = self.picker_save_filename.clone();
+                        let resp = ui.text_edit_singleline(&mut fname);
+                        // Focus the filename field only on the first frame
+                        let focus_id = egui::Id::new("picker_filename_focused");
+                        let already_focused = ctx.data(|d| d.get_temp::<bool>(focus_id).unwrap_or(false));
+                        if !already_focused {
+                            resp.request_focus();
+                            ctx.data_mut(|d| d.insert_temp(focus_id, true));
+                        }
+                        if resp.changed() {
+                            new_filename = Some(fname);
+                        }
+                        if resp.lost_focus()
+                            && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        {
+                            confirm = true;
+                        }
+                    } else {
+                        let tab = self.tab_manager.current_tab_ref();
+                        let n_marked = tab.marked_entries.len();
+                        let label = if n_marked > 0 {
+                            format!("{n_marked} selected")
+                        } else {
+                            tab.selected_entry()
+                                .map(|e| {
+                                    e.meta
+                                        .path
+                                        .file_name()
+                                        .map(|n| n.to_string_lossy().into_owned())
+                                        .unwrap_or_default()
+                                })
+                                .unwrap_or_default()
+                        };
+                        ui.label(label);
+                    }
+
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            ui.add_space(4.0);
+                            // In RTL layout, first widget added = rightmost.
+                            // Add Save/Open first (rightmost), Cancel second —
+                            // correct visual order and tab order.
+                            let btn_label = if save_mode { "Save" } else { "Open" };
+                            let btn = ui.button(btn_label);
+                            if !save_mode {
+                                btn.request_focus();
+                            }
+                            if btn.clicked() {
+                                confirm = true;
+                            }
+                            if ui.button("Cancel").clicked() {
+                                cancel = true;
+                            }
+                        },
+                    );
+                }); // horizontal
+                }); // frame
+            }); // panel
+
+            if let Some(fname) = new_filename {
+                self.picker_save_filename = fname;
+            }
+            if confirm {
+                self.picker_confirm();
+            } else if cancel {
+                self.picker_cancel();
+            }
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {

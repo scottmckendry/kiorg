@@ -46,6 +46,7 @@ fn create_test_app(file_count: usize) -> (Kiorg, tempfile::TempDir, tempfile::Te
         &cc,
         Some(temp_dir.path().to_path_buf()),
         Some(test_config_dir),
+        None,
     )
     .expect("Failed to create Kiorg app");
 

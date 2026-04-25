@@ -24,6 +24,22 @@ struct Args {
     /// Print the cache and config directory, then exit
     #[arg(long)]
     print_dirs: bool,
+
+    /// Run in file-picker mode; write selected path(s) to this file on confirm
+    #[arg(long, value_name = "RESULT_FILE")]
+    pick_mode: Option<PathBuf>,
+
+    /// Allow selecting multiple files in picker mode
+    #[arg(long)]
+    pick_multiple: bool,
+
+    /// Only allow selecting directories in picker mode
+    #[arg(long)]
+    pick_directory: bool,
+
+    /// Run in save-file mode (picker shows a filename input)
+    #[arg(long)]
+    pick_save: bool,
 }
 
 fn init_tracing() {
@@ -118,6 +134,13 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
 
+    let picker_config = args.pick_mode.map(|result_file| kiorg::app::PickerConfig {
+        result_file,
+        multiple: args.pick_multiple,
+        directory_only: args.pick_directory,
+        save_mode: args.pick_save,
+    });
+
     eframe::run_native(
         "Kiorg",
         options,
@@ -131,7 +154,7 @@ fn main() -> Result<(), eframe::Error> {
             // Configure fonts for proper emoji and system font rendering
             kiorg::font::configure_egui_fonts(&cc.egui_ctx);
 
-            match Kiorg::new(cc, initial_dir, args.config_dir) {
+            match Kiorg::new(cc, initial_dir, args.config_dir, picker_config) {
                 Ok(app) => Ok(Box::new(app)),
                 Err(e) => {
                     // Show the error in a startup error dialog instead of exiting

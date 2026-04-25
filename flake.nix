@@ -19,8 +19,6 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
-        "aarch64-darwin"
       ];
 
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system);
@@ -94,7 +92,18 @@
             pname = "kiorg";
             version = "1.5.2";
             src = ./.;
-            cargoHash = "sha256-prZHwCrLzAhwuiENN89MPHO0VHGCkWmMh/qGgzfwwzU=";
+            cargoHash = "sha256-Cw100J7G7x2AsLobKjHk4tO9CHjcxOkApIYILZLMTL0=";
+
+            cargoBuildFlags = [
+              "-p"
+              "kiorg"
+              "-p"
+              "kiorg-portal"
+            ];
+            cargoTestFlags = [
+              "-p"
+              "kiorg"
+            ];
 
             inherit nativeBuildInputs buildInputs;
 
@@ -111,6 +120,7 @@
             ];
 
             postInstall = ''
+              install -Dm755 target/${pkgs.stdenv.hostPlatform.rust.rustcTargetSpec}/release/xdg-desktop-portal-kiorg $out/bin/xdg-desktop-portal-kiorg
               wrapProgram $out/bin/kiorg \
                 --prefix LD_LIBRARY_PATH : ${
                   pkgs.lib.makeLibraryPath (
@@ -125,6 +135,8 @@
                     ]
                   )
                 }
+              wrapProgram $out/bin/xdg-desktop-portal-kiorg \
+                --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath (with pkgs; [ stdenv.cc.cc.lib ])}
             '';
 
             meta = {

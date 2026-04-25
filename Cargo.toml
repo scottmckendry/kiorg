@@ -6,6 +6,7 @@ members = [
     "crates/kiorg_plugin/examples/demo_plugin",
     "plugins/heif",
     "crates/pdfium-bind",
+    "crates/kiorg-portal",
 ]
 default-members = ["crates/kiorg"]
 resolver = "2"

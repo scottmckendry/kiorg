@@ -52,7 +52,7 @@ key = "x"
     let cc = eframe::CreationContext::_new_kittest(ctx);
 
     // Try to create Kiorg app with invalid config - this should fail
-    let app_result = kiorg::Kiorg::new(&cc, Some(temp_dir.path().to_path_buf()), Some(config_dir));
+    let app_result = kiorg::Kiorg::new(&cc, Some(temp_dir.path().to_path_buf()), Some(config_dir), None);
 
     // Verify that creating the app fails with a ConfigError
     assert!(
@@ -133,7 +133,7 @@ with no valid TOML syntax
     let cc = eframe::CreationContext::_new_kittest(ctx);
 
     // Try to create Kiorg app with malformed config - this should fail
-    let app_result = kiorg::Kiorg::new(&cc, Some(temp_dir.path().to_path_buf()), Some(config_dir));
+    let app_result = kiorg::Kiorg::new(&cc, Some(temp_dir.path().to_path_buf()), Some(config_dir), None);
 
     // Verify that creating the app fails
     assert!(
@@ -200,7 +200,7 @@ key = "d"
     let cc = eframe::CreationContext::_new_kittest(ctx);
 
     // Try to create Kiorg app with conflicting shortcuts - this should fail
-    let app_result = kiorg::Kiorg::new(&cc, Some(temp_dir.path().to_path_buf()), Some(config_dir));
+    let app_result = kiorg::Kiorg::new(&cc, Some(temp_dir.path().to_path_buf()), Some(config_dir), None);
 
     // Verify that creating the app fails with a ConfigError
     assert!(
@@ -250,7 +250,7 @@ key = "k"
     let cc = eframe::CreationContext::_new_kittest(ctx);
 
     // Try to create Kiorg app with valid config - this should succeed
-    let app_result = kiorg::Kiorg::new(&cc, Some(temp_dir.path().to_path_buf()), Some(config_dir));
+    let app_result = kiorg::Kiorg::new(&cc, Some(temp_dir.path().to_path_buf()), Some(config_dir), None);
 
     // Verify that creating the app succeeds
     assert!(
@@ -282,7 +282,7 @@ fn test_empty_config_directory_uses_defaults() {
     let cc = eframe::CreationContext::_new_kittest(ctx);
 
     // Try to create Kiorg app with empty config dir - this should succeed with defaults
-    let app_result = kiorg::Kiorg::new(&cc, Some(temp_dir.path().to_path_buf()), Some(config_dir));
+    let app_result = kiorg::Kiorg::new(&cc, Some(temp_dir.path().to_path_buf()), Some(config_dir), None);
 
     // Verify that creating the app succeeds
     assert!(
